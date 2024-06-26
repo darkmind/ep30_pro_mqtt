@@ -244,7 +244,7 @@ order    = Endian.Little
 parity   = 'N'
 stopbits = 1
 
-# If True - do not send data to mqtt brocker just print all parameters
+# If True - do not send data to backend just print all parameters
 # listed in 'attributes'
 debug = False
 
@@ -263,12 +263,12 @@ if ( isfile('configuration.yaml') ):
   backend    = configuration['backend']
   sensors    = configuration['sensors']
   sleep_time = configuration['run']['sleep_time']
-  c_boost_voltage = configuration['charge_config']['boost_voltage']
-  c_empty_voltage = configuration['charge_config']['empty_voltage']
-  c_float_current = configuration['charge_config']['float_current']
-  c_full_voltage  = configuration['charge_config']['full_voltage']
-  d_empty_voltage = configuration['discharge_config']['empty_voltage']
-  d_full_voltage  = configuration['discharge_config']['full_voltage']
+  c_boost_voltage = float(configuration['charge_config']['boost_voltage'])
+  c_empty_voltage = float(configuration['charge_config']['empty_voltage'])
+  c_float_current = float(configuration['charge_config']['float_current'])
+  c_full_voltage  = float(configuration['charge_config']['full_voltage'])
+  d_empty_voltage = float(configuration['discharge_config']['empty_voltage'])
+  d_full_voltage  = float(configuration['discharge_config']['full_voltage'])
 
   if (backend == 'mqtt'):
     hostname = configuration['mqtt']['hostname']
@@ -447,29 +447,24 @@ while True:
       case 'battery_level':
         battery_voltage = get_sensor_data('battery_voltage')
         charging_current = get_sensor_data('charging_current')
-        if ( result.registers[2] == 2 and
-          charging_current > float(configuration['charge_config']['float_current'])):
-          if battery_voltage > float(configuration['charge_config']['full_voltage']):
-            battery_level = ( 95.0 + (battery_voltage
-            - float(configuration['charge_config']['full_voltage']))
-            / (float(configuration['charge_config']['boost_voltage'])
-            - float(configuration['charge_config']['full_voltage']))
-            * 5.0 )
+        # If charging
+        if ( result.registers[2] == 2 and charging_current > c_float_current):
+          if battery_voltage > c_full_voltage:
+            battery_level = (95.0
+              + (battery_voltage - c_full_voltage)
+              / (c_boost_voltage - c_full_voltage)
+              * 5.0)
           else:
-            battery_level = ( (battery_voltage
-            - float(configuration['charge_config']['empty_voltage']))
-            / (float(configuration['charge_config']['full_voltage'])
-            - float(configuration['charge_config']['empty_voltage']))
-            * 95.0 )
+            battery_level = ( (battery_voltage - c_empty_voltage)
+              / (c_full_voltage - c_empty_voltage)
+              * 95.0 )
         else:
-            if battery_voltage > float(configuration['discharge_config']['full_voltage']):
+            if battery_voltage > d_full_voltage:
               battery_level = 100.0
             else:
-              battery_level = ( (battery_voltage
-              - float(configuration['discharge_config']['empty_voltage']))
-              / (float(configuration['discharge_config']['full_voltage'])
-              - float(configuration['discharge_config']['empty_voltage']))
-              * 100.0 )
+              battery_level = ( (battery_voltage - d_empty_voltage)
+                / (d_full_voltage - d_empty_voltage)
+                * 100.0 )
 
         battery_level = round(battery_level, 1)
         add_sensor_data(sensor, battery_level)
