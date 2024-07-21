@@ -27,7 +27,9 @@ sensors:
   - 'output_voltage'
   - 'ups_temperature'
 
-debug: off
+debug: False
+
+calc_consumed: True
 
 # possible values: mqtt, influx
 backend: mqtt

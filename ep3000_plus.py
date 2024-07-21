@@ -248,6 +248,9 @@ stopbits = 1
 # listed in 'attributes'
 debug = False
 
+# If True - calculate consumed power (W) and send it to broker
+calc_consumed = False
+
 c_boost_voltage = 28.8
 c_empty_voltage = 21.0
 c_float_current = 27.0
@@ -263,6 +266,7 @@ if ( isfile('configuration.yaml') ):
   backend    = configuration['backend']
   sensors    = configuration['sensors']
   sleep_time = configuration['run']['sleep_time']
+  calc_consumed   = configuration['calculate-consumed']
   c_boost_voltage = float(configuration['charge_config']['boost_voltage'])
   c_empty_voltage = float(configuration['charge_config']['empty_voltage'])
   c_float_current = float(configuration['charge_config']['float_current'])
@@ -286,6 +290,17 @@ if ( isfile('configuration.yaml') ):
 
 if (backend == 'mqtt'):
   sensors_definitions = []
+  if calc_consumed:
+    sensors_definitions.append({
+      'topic': topic('consumed_power/config'),
+      'payload': dumps({
+        "name": name("Consumed Power"),
+        "device_class": "power",
+        "unit_of_measurement": "W",
+        "state_class": "measurement",
+        "state_topic": topic('consumed_power/state'),
+      })
+    })
   for sensor in sensors:
     match sensor:
       case 'output_voltage':
@@ -422,6 +437,8 @@ elif (backend == 'influx'):
   except Exception as e:
     print(e)
 
+prev_consumed_power = 0
+
 while True:
   if (backend == 'mqtt'):
     sensors_data = []
@@ -431,12 +448,16 @@ while True:
   result    = client.read_holding_registers(address, length, slave = id)
   timestemp = time_ns()
 
+  grid_status = 'online'
+  if (result.registers[2] == 1):
+    grid_status = 'offline'
+
   for sensor in sensors:
     match sensor:
       case 'charging_current':
-        # Check if battery is discharging. If yes - charging_current parameter
+        # If battery is discharging charging_current parameter
         # is irrelevant and shows some impossible numbers
-        if (result.registers[2] == 1):
+        if (grid_status == 'offline'):
           charging_current = 0
         else:
           charging_current = get_sensor_data(sensor)
@@ -448,7 +469,7 @@ while True:
         battery_voltage = get_sensor_data('battery_voltage')
         charging_current = get_sensor_data('charging_current')
         # If charging
-        if ( result.registers[2] == 2 and charging_current > c_float_current):
+        if ( grid_status == 'online' and charging_current > c_float_current):
           if battery_voltage > c_full_voltage:
             battery_level = (95.0
               + (battery_voltage - c_full_voltage)
@@ -459,18 +480,30 @@ while True:
               / (c_full_voltage - c_empty_voltage)
               * 95.0 )
         else:
-            if battery_voltage > d_full_voltage:
-              battery_level = 100.0
-            else:
-              battery_level = ( (battery_voltage - d_empty_voltage)
-                / (d_full_voltage - d_empty_voltage)
-                * 100.0 )
+          if battery_voltage > d_full_voltage:
+            battery_level = 100.0
+          else:
+            battery_level = ( (battery_voltage - d_empty_voltage)
+              / (d_full_voltage - d_empty_voltage)
+              * 100.0 )
 
         battery_level = round(battery_level, 1)
         add_sensor_data(sensor, battery_level)
         continue
 
     add_sensor_data(sensor, get_sensor_data(sensor))
+
+
+  if calc_consumed:
+    consumed_power = 0
+    if (grid_status == 'offline'):
+      battery_voltage = get_sensor_data('battery_voltage')
+      load_ampere     = get_sensor_data('load_current')
+      consumed_power  = battery_voltage * load_ampere * (sleep_time / 3600)
+      consumed_power += prev_consumed_power
+
+    add_sensor_data('consumed_power', consumed_power)
+    prev_consumed_power = consumed_power
 
   push_data()
 
