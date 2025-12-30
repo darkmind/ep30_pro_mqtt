@@ -16,7 +16,7 @@ from influxdb_client.client.write_api import SYNCHRONOUS
 
 from pymodbus.constants import Endian
 from pymodbus.client import ModbusSerialClient
-from pymodbus.register_read_message import ReadHoldingRegistersResponse
+from pymodbus.pdu.register_message import ReadHoldingRegistersResponse
 
 
 def topic(name_value, component='sensor'):
@@ -240,7 +240,7 @@ baud     = 9600
 id       = 10
 length   = 26
 model    = 'EP3000'
-order    = Endian.Little
+order    = Endian.LITTLE
 parity   = 'N'
 stopbits = 1
 
@@ -415,7 +415,7 @@ if not client.is_socket_open():
   exit(1)
 
 if debug:
-  result = client.read_holding_registers(address, length, slave = id)
+  result = client.read_holding_registers(address = address, count = length, slave = id)
   index = 0
   for register in result.registers:
     value = result.registers[index]
@@ -445,7 +445,7 @@ while True:
   elif (backend == 'influx'):
     metric = Point('Modbus').tag('Device', 'EP3000')
 
-  result    = client.read_holding_registers(address, length, slave = id)
+  result    = client.read_holding_registers(address = address, count = length, slave = id)
   timestemp = time_ns()
 
   grid_status = 'online'
